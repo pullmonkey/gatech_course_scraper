@@ -13,6 +13,15 @@ Put your USERID and your PIN for oscar.gatech.edu.  This is how it gets the cour
 Put in the TERM you want, right now this is Spring 2016.
 Change your interests and what you've taken to get the best output.
 
+# Notes
+
+Right now it is just running with the Online data set for GT's OMSCS.
+It references foundational classes, specializations, your interests and availability for the given TERM to derive a weight (score).  The higher the score, the better the option is.
+
+Also, it will likely only work in Linux (64 bit) right off the bat.
+It uses poltergeist (phantomjs) to process all the javascript.
+Just replace the contents of the bin dir with the phantomjs for your system.
+
 # Example output
 
 NUMBER | ALT  | TITLE                          | WEIGHT | CAPACITY | REMAINING | IS_FOUNDATIONAL_TO_S | SPECIALIZATIONS_TO_S         | IS_INTERESTING_TO_S
@@ -38,12 +47,3 @@ NUMBER | ALT  | TITLE                          | WEIGHT | CAPACITY | REMAINING |
 8803   |      | Special TopicsReinforcement... | 10     | 200      | 196       | No                   | Robotics, HPC, IA Intell, ML | No
 8803   |      | Special TopicsEmbedded Soft... | 10     | 200      | 198       | No                   | Robotics, HPC, IA Intell, ML | No         
 
-
-# Notes
-
-Right now it is just running with the Online data set for GT's OMSCS.
-It references foundational classes, specializations, your interests and availability for the given TERM to derive a weight (score).  The higher the score, the better the option is.
-
-Also, it will likely only work in Linux (64 bit) right off the bat.
-It uses poltergeist (phantomjs) to process all the javascript.
-Just replace the contents of the bin dir with the phantomjs for your system.
