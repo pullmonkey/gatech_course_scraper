@@ -1,0 +1,226 @@
+require 'capybara'
+require 'capybara/dsl'
+require 'capybara/poltergeist'
+require 'table_print'
+require 'open-uri'
+
+ENV["PATH"] += ":#{File.dirname(__FILE__)}/bin"
+
+Capybara.run_server = false
+Capybara.javascript_driver = :poltergeist
+Capybara.register_driver :poltergeist do |app|
+  Capybara::Poltergeist::Driver.new(app, {js_errors: false})
+end
+Capybara.current_driver = :poltergeist
+Capybara.app_host = 'https://oscar.gatech.edu'
+Capybara.default_wait_time = 20
+
+class Course
+  attr_accessor :number, :title, :capacity, :actual, :remaining, :instructor, :is_foundational, :specializations
+  def initialize(course_data, opts={})
+    @number = course_data[3]
+    @title = course_data[8]
+    @capacity = course_data[11].to_i
+    @actual = course_data[12].to_i
+    @remaining = course_data[13].to_i
+    @instructor = course_data[17]
+    @is_foundational = check_if_foundational(opts)
+    @is_interesting = check_if_interesting(opts)
+    @has_been_taken = check_if_has_been_taken(opts)
+    @alternate_course_number = get_alternate_course_number(opts)
+    @specializations = get_specializations(opts)
+  end
+
+  def weight
+    15 * (@is_foundational ? 1 : 0) +
+    15 * (@is_interesting ? 1 : 0) +
+    10 * (is_available? ? 1 : 0) +
+    -40 * (@has_been_taken ? 1 : 0)
+  end
+
+  def is_available?
+    @remaining > 0
+  end
+
+  def specializations_to_s
+    @specializations.join(", ")
+  end
+
+  def is_foundational_to_s
+    @is_foundational ? "Yes" : "No"
+  end
+
+  def is_interesting_to_s
+    @is_interesting ? "Yes" : "No"
+  end
+
+  def alt
+    @alternate_course_number
+  end
+
+  def get_alternate_course_number(opts={})
+    #return nil unless opts.has_key?(:alternate_course_numbers)
+    if @number == "6476"
+      puts @number
+      puts opts[:alternate_course_numbers].inspect
+      puts opts[:alternate_course_numbers][@number].inspect
+    end
+    return opts[:alternate_course_numbers][@number]
+  end
+
+  def check_if_interesting(opts={})
+    return "IDK" unless opts.has_key?(:interesting_course_numbers)
+    return opts[:interesting_course_numbers].include?(@number)
+  end
+
+  def check_if_has_been_taken(opts={})
+    return "IDK" unless opts.has_key?(:taken_course_numbers)
+    return opts[:taken_course_numbers].include?(@number)
+  end
+
+  def check_if_foundational(opts={})
+    return "IDK" unless opts.has_key?(:foundational_course_numbers)
+    return opts[:foundational_course_numbers].include?(@number)
+  end
+
+  def get_specializations(opts={})
+    return [] unless opts.has_key?(:specialization_course_numbers)
+    data = []
+    opts[:specialization_course_numbers].each do |name, nums|
+      data << name if nums.include?(@number)
+      if alt
+        puts @alternate_course_number
+        puts nums.inspect
+        puts nums.include?(alt)
+      end
+      data << name if nums.include?(alt)
+    end
+    data
+  end
+end
+
+class CourseAvailabilityScraper
+  include Capybara::DSL
+
+  def initialize(userid, pin, term, opts={})
+    login(userid,pin)
+    go_to_look_up_classes(term)
+    search_for_courses(opts)
+  end
+
+  def get_course_details(opts={})
+    doc = Nokogiri::HTML(page.body)
+    online_courses = doc.css('table.datadisplaytable tr')[2..-1].select{|tr| tr.css("td")[5].text == "O"}
+
+    online_courses.map do |course_tr|
+      Course.new(course_tr.css("td").map(&:text), opts)
+    end
+  end
+
+  def search_for_courses(opts={})
+    subject = opts[:subject] || "Computer Science"
+    campus = opts[:campus] || "Online"
+    wait_until{page.has_content?('Advanced Search')}
+    click_button "Advanced Search"
+    wait_until{page.has_content?('Section Search')}
+    select subject, from: "Subject"
+    select campus, from: "Campus"
+    #save_and_open_page
+    click_button "Section Search"
+  end
+
+  def login(userid,pin)
+    visit('/pls/bprod/bwskfcls.p_sel_crse_search')
+    fill_in "User ID", with: userid
+    fill_in "PIN", with: pin
+    click_button "Login"
+  end
+
+  def go_to_look_up_classes(term)
+    visit("/pls/bprod/bwskfcls.p_sel_crse_search")
+    select term, from: "p_term"
+    click_button "Submit"
+  end
+
+  def follow(link)
+    wait_until{page.has_content?(link)}
+    click_link link
+  end
+
+  def wait_until
+    require "timeout"
+    Timeout.timeout(Capybara.default_wait_time) do
+      sleep(0.1) until value = yield
+      value
+    end
+  end
+
+end
+
+def foundational_course_numbers
+  doc = Nokogiri::HTML(open("http://www.omscs.gatech.edu/courses/"))
+  lis = doc.css("li")
+  courses = lis.map(&:text).select{|c| c =~ /CS/}
+  courses.select{|c| c =~ /^\*/}.map{|c| c.split(" ")[1]}
+end
+
+def specializations
+  {"Robotics": "http://www.omscs.gatech.edu/specialization-computational-perception-robotics/",
+   "Systems": "http://www.omscs.gatech.edu/courses/specialization-computing-systems/",
+   "HPC": "http://www.omscs.gatech.edu/specialization-high-performance-computing/",
+   "IA Intell": "http://www.omscs.gatech.edu/specialization-interactive-intelligence/",
+   "ML": "http://www.omscs.gatech.edu/specialization-machine-learning/"}
+end
+
+def specialization_course_numbers
+  data = {}
+  specializations.each do |name, url|
+    doc = Nokogiri::HTML(open(url))
+    lis = doc.css("li")
+    courses = lis.map(&:text).select{|c| c =~ /CS/}
+    data[name] = courses.map{|c| c.split(" ")[1]}
+  end
+  return data
+end
+
+def interesting_course_numbers
+  return [
+    6476, # computer vision
+    6250, # computer networks
+    6460, # educational tech
+    6440, # intro health info
+    6475, # comp photo
+    7637, # KBAI
+    7641, # ML
+    7646, # ML
+    6242, # data and vis
+    6601, # AI
+  ].map(&:to_s)
+end
+
+def taken_course_numbers
+  [
+    6476, # computer vision
+  ].map(&:to_s)
+end
+
+def alternate_course_numbers
+  {
+    "6476" => "7495" # computer vision number is screwed up on specialization page
+  }
+end
+
+USERID = UPDATE THIS - your GTID
+PIN = UPDATE THIS - your 6-digit pin
+TERM = "Spring 2016"
+
+# could add in subject, campus, ...
+opts = {foundational_course_numbers: foundational_course_numbers,
+        specialization_course_numbers: specialization_course_numbers,
+        interesting_course_numbers: interesting_course_numbers,
+        taken_course_numbers: taken_course_numbers,
+        alternate_course_numbers: alternate_course_numbers}
+cas =  CourseAvailabilityScraper.new(USERID,PIN,TERM,opts)
+courses = cas.get_course_details(opts).sort{|a,b| b.weight <=> a.weight}
+tp courses, :number, :alt, :title, :weight, :capacity, :remaining, :is_foundational_to_s, :specializations_to_s, :is_interesting_to_s
+
